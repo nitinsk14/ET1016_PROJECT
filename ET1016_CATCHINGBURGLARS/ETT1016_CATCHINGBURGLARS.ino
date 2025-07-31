@@ -16,8 +16,5 @@ void setup() {
 }
 
 void loop() {
-  digitalWrite(LED_RED, HIGH);
-  delay(500);
-  digitalWrite(LED_RED, LOW);
-  delay(500);
+  digitalWrite(LED_GREEN, HIGH);
 }
