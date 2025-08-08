@@ -3,103 +3,133 @@
 // NITIN & EVAN 
 // P2517704 & P2517478
 // DCEP/FT/1A/09
+
 #include <math.h>
 #include <Wire.h>
-
 #include "RichShieldLightSensor.h"
 #include "RichShieldPassiveBuzzer.h"
+#include "RichShieldNTC.h"
+#include "RichShieldTM1637.h"
 
-// Pin definitions
-#define BTN 8
-#define BUZZER 3
-#define RED 4
-#define GREEN 5
-#define BLUE 6
-#define LIGHTSENSOR_PIN A2
+// ----- PIN SETUP -----
+#define BUTTON_PIN 8
+#define BUZZER_PIN 3
+#define RED_LED 4
+#define GREEN_LED 5
+#define BLUE_LED 6
+#define LDR_PIN A2
+#define TEMP_PIN A1
+#define CLK 10
+#define DIO 11
 
-// Setup buzzer and light sensor objects
-PassiveBuzzer buz(BUZZER);
-LightSensor lightsensor(LIGHTSENSOR_PIN);
+#define ALARM_NOTE 698  // M4 note
 
-#define NOTE_M4  698
+// ----- SETTINGS -----
+const float lightThreshold = 20.0;
+const int tempThreshold = 26;
+const int debounceTime = 300;
 
-int armed = 0;
-unsigned long lastButtonTime = 0;
-const unsigned long debounceDelay = 300;
+// ----- LIBRARY OBJECTS -----
+PassiveBuzzer buzzer(BUZZER_PIN);
+LightSensor ldr(LDR_PIN);
+NTC tempSensor(TEMP_PIN);
+TM1637 display(CLK, DIO);
 
-const int ledPins[] = {RED, GREEN, BLUE};
-const int numLeds = sizeof(ledPins) / sizeof(ledPins[0]);
+// ----- STATE VARIABLES -----
+int isArmed = 0;
+unsigned long lastBtnPress = 0;
+const int leds[] = {RED_LED, GREEN_LED, BLUE_LED};
+const int ledCount = sizeof(leds) / sizeof(leds[0]);
 
-// Threshold for lux below which alarm triggers (adjust as needed)
-const float luxThreshold = 20.0;
-
-// Turn off all LEDs
-void turnOffAllLEDs() {
-  for (int i = 0; i < numLeds; i++) {
-    digitalWrite(ledPins[i], LOW);
+// ----- LED FUNCTIONS -----
+void turnOffLEDs() {
+  for (int i = 0; i < ledCount; i++) {
+    digitalWrite(leds[i], LOW);
   }
 }
 
-// Show disarmed (green)
 void showDisarmed() {
-  turnOffAllLEDs();
-  digitalWrite(GREEN, HIGH);
+  turnOffLEDs();
+  digitalWrite(GREEN_LED, HIGH);
 }
 
-// Show armed (blue)
 void showArmed() {
-  turnOffAllLEDs();
-  digitalWrite(BLUE, HIGH);
+  turnOffLEDs();
+  digitalWrite(BLUE_LED, HIGH);
 }
 
-// Show alarm (red)
 void showAlarm() {
-  turnOffAllLEDs();
-  digitalWrite(RED, HIGH);
+  turnOffLEDs();
+  digitalWrite(RED_LED, HIGH);
 }
 
-// Check if intrusion detected by light sensor reading
-int isIntrusionDetected() {
-  float Rsensor = lightsensor.getRes(); // resistance in KOhms
-  float lux = 325 * pow(Rsensor, -1.4);
-  
-  Serial.print("Resistance (KOhm): ");
-  Serial.print(Rsensor, 1);
-  Serial.print(" | Lux: ");
-  Serial.println(lux, 1);
+// ----- DISPLAY TEMPERATURE -----
+void displayTemp(int8_t tempVal) {
+  int8_t digits[4];
 
-  // Return 1 if lux below threshold (dark = possible intrusion)
-  if (lux < luxThreshold) return 1;
-  else return 0;
-}
-
-
-void setup() {
-  pinMode(BTN, INPUT_PULLUP);
-  pinMode(BUZZER, OUTPUT);
-  for (int i = 0; i < numLeds; i++) {
-    pinMode(ledPins[i], OUTPUT);
+  if (tempVal < 0) {
+    digits[0] = INDEX_NEGATIVE_SIGN;
+    tempVal = abs(tempVal);
+  } else {
+    digits[0] = (tempVal < 100) ? INDEX_BLANK : tempVal / 100;
   }
+
+  tempVal %= 100;
+  digits[1] = tempVal / 10;
+  digits[2] = tempVal % 10;
+  digits[3] = 12; // 'C'
+
+  display.display(digits);
+}
+
+// ----- CHECK LDR -----
+int isLightDetected() {
+  float r = ldr.getRes();
+  float lux = 325 * pow(r, -1.4);
+  Serial.print("LDR Lux: ");
+  Serial.println(lux);
+
+  return lux < lightThreshold;
+}
+
+// ----- SETUP -----
+void setup() {
+  pinMode(BUTTON_PIN, INPUT_PULLUP);
+  pinMode(BUZZER_PIN, OUTPUT);
+  for (int i = 0; i < ledCount; i++) {
+    pinMode(leds[i], OUTPUT);
+  }
+
   Serial.begin(9600);
+  display.init();
+  delay(1000);
   showDisarmed();
 }
 
+// ----- LOOP -----
 void loop() {
-  // Toggle armed/disarmed with button press
-  if (digitalRead(BTN) == LOW && millis() - lastButtonTime > debounceDelay) {
-    armed = !armed;
-    lastButtonTime = millis();
+  if (digitalRead(BUTTON_PIN) == LOW && millis() - lastBtnPress > debounceTime) {
+    isArmed = !isArmed;
+    lastBtnPress = millis();
   }
 
-  if (armed) {
+  int tempVal = (int)tempSensor.getTemperature();
+  displayTemp(tempVal);
+
+  if (isArmed) {
     showArmed();
-    if (isIntrusionDetected()) {
+
+    if (isLightDetected()) {
       showAlarm();
-      buz.playTone(698,10000);
+      buzzer.playTone(ALARM_NOTE, 1000);
+    } else if (tempVal >= tempThreshold) {
+      showAlarm();
+      buzzer.playTone(ALARM_NOTE, 1000);
     }
+
   } else {
     showDisarmed();
   }
 
-  delay(50);
+  delay(100);
 }
