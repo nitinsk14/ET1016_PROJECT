@@ -26,7 +26,7 @@
 
 // ----- SETTINGS -----
 const float lightThreshold = 20.0;
-const int tempThreshold = 26;
+const int tempThreshold = 28;
 const int debounceTime = 300;
 
 // ----- LIBRARY OBJECTS -----
@@ -48,19 +48,9 @@ void turnOffLEDs() {
   }
 }
 
-void showDisarmed() {
+void showLED(int ledPin) {
   turnOffLEDs();
-  digitalWrite(GREEN_LED, HIGH);
-}
-
-void showArmed() {
-  turnOffLEDs();
-  digitalWrite(BLUE_LED, HIGH);
-}
-
-void showAlarm() {
-  turnOffLEDs();
-  digitalWrite(RED_LED, HIGH);
+  digitalWrite(ledPin, HIGH);
 }
 
 // ----- DISPLAY TEMPERATURE -----
@@ -103,7 +93,7 @@ void setup() {
   Serial.begin(9600);
   display.init();
   delay(1000);
-  showDisarmed();
+  showLED(GREEN_LED); // Start in disarmed state
 }
 
 // ----- LOOP -----
@@ -117,18 +107,15 @@ void loop() {
   displayTemp(tempVal);
 
   if (isArmed) {
-    showArmed();
+    showLED(BLUE_LED); // Armed mode
 
-    if (isLightDetected()) {
-      showAlarm();
-      buzzer.playTone(ALARM_NOTE, 1000);
-    } else if (tempVal >= tempThreshold) {
-      showAlarm();
+    if (isLightDetected() || tempVal >= tempThreshold) {
+      showLED(RED_LED); // Alarm mode
       buzzer.playTone(ALARM_NOTE, 1000);
     }
 
   } else {
-    showDisarmed();
+    showLED(GREEN_LED); // Disarmed mode
   }
 
   delay(100);
